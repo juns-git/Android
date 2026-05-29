@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "578751242407",
+    "project_id": "familystockgate",
+    "storage_bucket": "familystockgate.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:578751242407:android:b44755d9195006d608bb82",
+        "android_client_info": {
+          "package_name": "io.github.juns_git.android.familystockgate"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "578751242407-ln0abrg4g9rvdskm0p7grb6u97k329gc.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "io.github.juns_git.android.familystockgate",
+            "certificate_hash": "97a56d77f2fe7f4aa9a252e1ed511b1523299dd8"
+          }
+        },
+        {
+          "client_id": "578751242407-ojmugfllnskbsqiog6jdd0sgd3jkc5cv.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBBXez6GsUQQ0tr0ktpnQsLVR2aYIWcf4g"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "578751242407-ojmugfllnskbsqiog6jdd0sgd3jkc5cv.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

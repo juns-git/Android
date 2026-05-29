@@ -1,10 +1,11 @@
-plugins {
+﻿plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    id("com.google.gms.google-services")
 }
 
 android {
-    namespace = "io.github.juns_git.familystockgate"
+    namespace = "io.github.juns_git.android.familystockgate"
     compileSdk {
         version = release(36) {
             minorApiLevel = 1
@@ -12,7 +13,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "io.github.juns_git.familystockgate"
+        applicationId = "io.github.juns_git.android.familystockgate"
         minSdk = 24
         targetSdk = 36
         versionCode = 1
@@ -58,4 +59,22 @@ dependencies {
     androidTestImplementation(libs.androidx.junit)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
+    implementation(platform("com.google.firebase:firebase-bom:34.13.0"))
+    implementation("com.google.firebase:firebase-analytics")
+    implementation("com.google.firebase:firebase-auth")          // Firebase 인증 엔진
+    implementation("com.google.firebase:firebase-firestore")     // Firestore DB
+    implementation("com.google.firebase:firebase-messaging")     // FCM 푸시 알림
+    implementation("com.google.firebase:firebase-functions")     // Cloud Functions 호출
+
+    // Google 계정 선택 팝업 (firebase-auth만으로는 UI가 없음)
+    implementation("com.google.android.gms:play-services-auth:21.3.0")
+
+    // Firebase Task → 코루틴 await() 브리지 (ViewModel에서 suspend fun 사용 필수)
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.10.2")
+
+    // 공공데이터포털 금융위원회 주식시세 API
+    implementation("com.squareup.retrofit2:retrofit:2.11.0")
+    implementation("com.squareup.retrofit2:converter-gson:2.11.0")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
 }

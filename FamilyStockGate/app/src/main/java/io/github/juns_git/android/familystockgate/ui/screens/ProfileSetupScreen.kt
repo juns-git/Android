@@ -51,6 +51,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import io.github.juns_git.android.familystockgate.data.model.UserRole
+import io.github.juns_git.android.familystockgate.ui.theme.CharacterBadge
 import io.github.juns_git.android.familystockgate.ui.viewmodel.AuthState
 import io.github.juns_git.android.familystockgate.ui.viewmodel.FamilyStockViewModel
 import io.github.juns_git.android.familystockgate.ui.viewmodel.InviteCodeFetchState
@@ -72,7 +73,8 @@ private fun restartApp(context: android.content.Context) {
 @Composable
 fun ProfileSetupScreen(
     viewModel: FamilyStockViewModel,
-    innerPadding: PaddingValues
+    innerPadding: PaddingValues,
+    onSignOut: () -> Unit
 ) {
     // null = 아직 미선택 (초기 상태) — 역할을 선택해야만 다음 단계로 진행
     var selectedRole by remember { mutableStateOf<UserRole?>(null) }
@@ -123,6 +125,9 @@ fun ProfileSetupScreen(
             .verticalScroll(rememberScrollState())
     ) {
         Spacer(Modifier.height(24.dp))
+
+        CharacterBadge(size = 64.dp, modifier = Modifier.align(Alignment.CenterHorizontally))
+        Spacer(Modifier.height(12.dp))
 
         Text("프로필 설정", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         Text(
@@ -213,6 +218,21 @@ fun ProfileSetupScreen(
                     viewModel.createChildProfile(nickname)
                 }
             )
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        OutlinedButton(
+            onClick = onSignOut,
+            modifier = Modifier.fillMaxWidth(),
+            colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
+                contentColor = MaterialTheme.colorScheme.error
+            ),
+            border = androidx.compose.foundation.BorderStroke(
+                1.dp, MaterialTheme.colorScheme.error
+            )
+        ) {
+            Text("로그아웃")
         }
 
         Spacer(Modifier.height(32.dp))
@@ -580,16 +600,6 @@ private fun ChildSection(
         }
     }
 
-    Spacer(Modifier.height(16.dp))
-
-    OutlinedButton(
-        onClick = { onDirectStart(if (nickname.isNotBlank()) nickname else "테스트자녀") },
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(44.dp)
-    ) {
-        Text("[DEBUG] 코드 없이 자녀 프로필 생성 (테스트용)", style = MaterialTheme.typography.labelMedium)
-    }
 }
 
 // ── 공용 UI 컴포넌트 ──────────────────────────────────────────────────────────

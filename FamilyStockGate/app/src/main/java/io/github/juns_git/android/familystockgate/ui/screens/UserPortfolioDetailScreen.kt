@@ -22,6 +22,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -29,12 +30,14 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import io.github.juns_git.android.familystockgate.ui.theme.CharacterBadge
 import io.github.juns_git.android.familystockgate.data.model.HoldingItem
 import io.github.juns_git.android.familystockgate.data.model.LeaderboardEntry
 import io.github.juns_git.android.familystockgate.data.model.TradeRequest
@@ -96,6 +99,29 @@ fun UserPortfolioDetailScreen(
     val selectedName    = holdings.find { it.stock.ticker == selectedTicker }?.stock?.name ?: selectedTicker
     val rightPanelCount = filteredTransactions.size + holdingsWithNoTx.size
 
+    // ── 페이지네이션 ───────────────────────────────────────────────────────────
+    val PAGE_SIZE = 100
+    // 필터 변경 시 자동으로 0페이지 복귀 (rememberSaveable key 이용)
+    var currentPage by rememberSaveable(selectedTicker) { mutableStateOf(0) }
+    val totalTxPages = ((filteredTransactions.size - 1) / PAGE_SIZE + 1).coerceAtLeast(1)
+    val pagedTransactions = filteredTransactions
+        .drop(currentPage * PAGE_SIZE)
+        .take(PAGE_SIZE)
+
+    // 현재 페이지 거래 날짜 범위
+    val pageDtFmt = remember { SimpleDateFormat("yy/MM/dd", Locale.KOREA) }
+    val pageRangeText = if (pagedTransactions.isEmpty()) {
+        ""
+    } else {
+        val timestamps = pagedTransactions.map {
+            if (it.completedAt > 0L) it.completedAt else it.timestamp
+        }
+        val oldest = timestamps.minOrNull() ?: 0L
+        val newest = timestamps.maxOrNull() ?: 0L
+        if (oldest == newest) pageDtFmt.format(Date(oldest))
+        else "${pageDtFmt.format(Date(oldest))} ~ ${pageDtFmt.format(Date(newest))}"
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -111,6 +137,7 @@ fun UserPortfolioDetailScreen(
             IconButton(onClick = onBack) {
                 Icon(Icons.Default.ArrowBack, contentDescription = "뒤로")
             }
+            CharacterBadge(size = 36.dp)
             Text(
                 text = "${nickname}의 투자 현황",
                 style = MaterialTheme.typography.titleLarge,
@@ -177,7 +204,7 @@ fun UserPortfolioDetailScreen(
 
             VerticalDivider()
 
-            // 우측 50% — 거래 기록 타임라인 (필터 + 초기 설정 합성)
+            // 우측 50% — 거래 기록 타임라인 (페이지네이션 적용)
             LazyColumn(
                 modifier = Modifier
                     .weight(1f)
@@ -186,31 +213,78 @@ fun UserPortfolioDetailScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 item {
+                    // ── 헤더: 제목 ──────────────────────────────────────
                     Text(
                         text = if (selectedTicker != null)
-                            "${selectedName} (${rightPanelCount})"
+                            "${selectedName} (${rightPanelCount}건)"
                         else
-                            "거래 기록 (${rightPanelCount})",
-                        style = MaterialTheme.typography.labelMedium,
+                            "거래 기록 (${rightPanelCount}건)",
+                        style     = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
+                        color     = MaterialTheme.colorScheme.primary
                     )
+                    // ── 페이지네이션 컨트롤 (2페이지 이상일 때만) ────────
+                    if (totalTxPages > 1) {
+                        Spacer(Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            TextButton(
+                                onClick  = { if (currentPage > 0) currentPage-- },
+                                enabled  = currentPage > 0,
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                            ) {
+                                Text(
+                                    "← 이전",
+                                    style = MaterialTheme.typography.labelSmall
+                                )
+                            }
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                if (pageRangeText.isNotEmpty()) {
+                                    Text(
+                                        text  = pageRangeText,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Text(
+                                    text  = "${currentPage + 1} / ${totalTxPages} 페이지",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            TextButton(
+                                onClick  = { if (currentPage < totalTxPages - 1) currentPage++ },
+                                enabled  = currentPage < totalTxPages - 1,
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                            ) {
+                                Text(
+                                    "다음 →",
+                                    style = MaterialTheme.typography.labelSmall
+                                )
+                            }
+                        }
+                    }
                     Spacer(Modifier.height(4.dp))
                 }
-                if (filteredTransactions.isEmpty() && holdingsWithNoTx.isEmpty()) {
+
+                // ── 현재 페이지 거래 목록 ──────────────────────────────
+                if (pagedTransactions.isEmpty() && holdingsWithNoTx.isEmpty()) {
                     item {
                         Text(
-                            text = if (selectedTicker != null) "해당 종목 거래 기록 없음"
-                                   else "거래 기록 없음",
+                            text  = if (selectedTicker != null) "해당 종목 거래 기록 없음"
+                                    else "거래 기록 없음",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 } else {
-                    items(filteredTransactions, key = { it.requestId }) { tx ->
+                    items(pagedTransactions, key = { it.requestId }) { tx ->
                         TransactionCard(tx)
                     }
-                    // 거래 기록 없이 보유 중인 종목 → 초기 설정 카드
+                    // 거래 기록 없이 보유 중인 종목 → 초기 설정 카드 (페이지 무관 하단 고정)
                     items(holdingsWithNoTx, key = { "init_${it.stock.ticker}" }) { holding ->
                         InitialSetupCard(holding)
                     }
@@ -310,15 +384,26 @@ private fun DashboardCard(entry: LeaderboardEntry?, balance: Long) {
 @Composable
 private fun HoldingCard(holding: HoldingItem, isSelected: Boolean, onClick: () -> Unit) {
     val isProfit = holding.profitRate >= 0
-    val rateColor = if (isProfit) MaterialTheme.colorScheme.error
-                   else MaterialTheme.colorScheme.primary
+
+    // 선택 시 primaryContainer 위에서 onPrimaryContainer 기준으로 통일
+    // (테마마다 primaryContainer가 밝거나 어두워 onSurface/primary가 불가시해지는 문제 방지)
+    val rateColor = when {
+        isSelected -> MaterialTheme.colorScheme.onPrimaryContainer
+        isProfit   -> MaterialTheme.colorScheme.error
+        else       -> MaterialTheme.colorScheme.primary
+    }
+    val subTextColor = if (isSelected)
+        MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+    else
+        MaterialTheme.colorScheme.onSurfaceVariant
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onClick() },
         colors = if (isSelected) CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+            contentColor   = MaterialTheme.colorScheme.onPrimaryContainer
         ) else CardDefaults.cardColors()
     ) {
         Column(
@@ -335,7 +420,7 @@ private fun HoldingCard(holding: HoldingItem, isSelected: Boolean, onClick: () -
             Text(
                 text = holding.stock.ticker,
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = subTextColor
             )
             Spacer(Modifier.height(2.dp))
             Row(
@@ -357,12 +442,12 @@ private fun HoldingCard(holding: HoldingItem, isSelected: Boolean, onClick: () -
             Text(
                 text = "평단 ₩${"%,d".format(holding.avgPrice)}",
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = subTextColor
             )
             Text(
                 text = "현재 ₩${"%,d".format(holding.stock.currentPrice)}",
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = subTextColor
             )
             Text(
                 text = "평가 손익 ₩${"%,d".format(holding.profitLoss)}",

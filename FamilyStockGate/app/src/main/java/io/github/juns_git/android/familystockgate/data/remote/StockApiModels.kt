@@ -6,16 +6,28 @@ import com.google.gson.JsonDeserializer
 import com.google.gson.JsonElement
 import java.lang.reflect.Type
 
+// ── Naver Finance 모바일 API 모델 ──────────────────────────────────────────
+data class NaverStockBasicResponse(
+    val stockCode: String?,
+    val stockName: String?,
+    val closePrice: String?,               // 현재가 (장중) 또는 종가, 쉼표 포함 "317,000"
+    val compareToPreviousClosePrice: String?,
+    val fluctuationsRatio: String?         // 등락률 "+5.84" / "-2.44"
+)
+
+// ── 공공데이터포털 KRX API 모델 (마스터 목록 다운로드 전용) ──────────────────
 data class StockPriceApiResponse(val response: ApiResponse?)
 data class ApiResponse(val header: ApiHeader?, val body: ApiBody?)
 data class ApiHeader(val resultCode: String?, val resultMsg: String?)
 data class ApiBody(val items: List<StockItemResponse>?)
 
 data class StockItemResponse(
+    val basDt: String?,    // 기준일자 (YYYYMMDD)
     val srtnCd: String?,   // 단축코드
     val itmsNm: String?,   // 종목명
     val clpr: String?,     // 종가
-    val fltRt: String?     // 등락률
+    val fltRt: String?,    // 등락률
+    val trqu: String?      // 거래량 (Trading Quantity)
 )
 
 /**

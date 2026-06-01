@@ -58,6 +58,9 @@ data class HoldingItem(
     val profitLoss: Long get() = (stock.currentPrice - avgPrice) * quantity
 }
 
+// 차트 캔들 1개 (날짜 + 종가 + 거래량)
+data class ChartPoint(val date: String, val price: Float, val volume: Long = 0L)
+
 // 리더보드 항목: 가족 내 자녀별 수익률 랭킹
 data class LeaderboardEntry(
     val childUid: String,

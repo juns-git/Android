@@ -1,6 +1,7 @@
 package io.github.juns_git.android.familystockgate.ui.viewmodel
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.FirebaseAuth
@@ -11,6 +12,7 @@ import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.SetOptions
 import com.google.firebase.functions.FirebaseFunctions
 import com.google.firebase.messaging.FirebaseMessaging
+import io.github.juns_git.android.familystockgate.data.model.ChartPoint
 import io.github.juns_git.android.familystockgate.data.model.FamilyData
 import io.github.juns_git.android.familystockgate.data.model.HoldingItem
 import io.github.juns_git.android.familystockgate.data.model.LeaderboardEntry
@@ -23,6 +25,7 @@ import io.github.juns_git.android.familystockgate.data.model.UserRole
 import io.github.juns_git.android.familystockgate.data.local.StockMasterRepository
 import io.github.juns_git.android.familystockgate.data.remote.RetrofitClient
 import io.github.juns_git.android.familystockgate.data.remote.StockItemResponse
+import io.github.juns_git.android.familystockgate.ui.theme.AppTheme
 import io.github.juns_git.android.familystockgate.utils.FirebaseConfigManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -31,8 +34,11 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
@@ -142,6 +148,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val _isPriceRefreshing = MutableStateFlow(false)
     val isPriceRefreshing: StateFlow<Boolean> = _isPriceRefreshing.asStateFlow()
 
+    /** 수동 새로고침 중 여부 (오버레이 표시용) */
+    private val _isManualRefreshing = MutableStateFlow(false)
+    val isManualRefreshing: StateFlow<Boolean> = _isManualRefreshing.asStateFlow()
+
+    /** 가격 새로고침 완료 시 UI에 전달할 메시지 */
+    private val _refreshMessage = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val refreshMessage: SharedFlow<String> = _refreshMessage.asSharedFlow()
+
     /** API 조회 성공 시 실시간 가격 오버레이 (ticker → StockItem) */
     private val dynamicPrices = mutableMapOf<String, StockItem>()
 
@@ -159,6 +173,28 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     /** 앱 레벨 FCM 수신 ON/OFF (Firestore users/{uid}.fcmEnabled 와 동기화) */
     private val _fcmEnabled = MutableStateFlow(true)
     val fcmEnabled: StateFlow<Boolean> = _fcmEnabled.asStateFlow()
+
+    // ── 🎨 앱 테마 (SharedPreferences 영구 저장) ────────────────────────────────
+
+    private val uiPrefs by lazy {
+        getApplication<Application>().getSharedPreferences("fsg_ui_prefs", 0)
+    }
+
+    private val _appTheme = MutableStateFlow(
+        try {
+            AppTheme.valueOf(
+                getApplication<Application>()
+                    .getSharedPreferences("fsg_ui_prefs", 0)
+                    .getString("app_theme", AppTheme.MODERN.name) ?: AppTheme.MODERN.name
+            )
+        } catch (_: IllegalArgumentException) { AppTheme.MODERN }
+    )
+    val appTheme: StateFlow<AppTheme> = _appTheme.asStateFlow()
+
+    fun updateAppTheme(theme: AppTheme) {
+        _appTheme.value = theme
+        uiPrefs.edit().putString("app_theme", theme.name).apply()
+    }
 
     // ── 🏆 리더보드 StateFlow ─────────────────────────────────────────────────
 
@@ -183,6 +219,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     /** [Frame 8-1] 포트폴리오 상세 화면에서 조회 중인 대상 UID */
     private val _portfolioTargetUid = MutableStateFlow("")
     val portfolioTargetUid: StateFlow<String> = _portfolioTargetUid.asStateFlow()
+
+    // ── 📈 종목 차트 데이터 (TradeScreen) ────────────────────────────────────────
+    private val _stockChartData = MutableStateFlow<List<ChartPoint>>(emptyList())
+    val stockChartData: StateFlow<List<ChartPoint>> = _stockChartData.asStateFlow()
+
+    // MA 버퍼 포함 전체 데이터 중 화면에 표시할 시작 인덱스 (앞쪽은 MA 계산용 버퍼)
+    private val _chartDisplayOffset = MutableStateFlow(0)
+    val chartDisplayOffset: StateFlow<Int> = _chartDisplayOffset.asStateFlow()
+
+    private val _isChartLoading = MutableStateFlow(false)
+    val isChartLoading: StateFlow<Boolean> = _isChartLoading.asStateFlow()
 
     // ── 초기화: FirebaseAuth 상태 감시 ──────────────────────────────────────
 
@@ -1370,19 +1417,43 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
      * 이름 검색(likeItmsNm) 방식으로 현재가 조회 후 티커로 재검증.
      * srtnCd 필터가 엉뚱한 종목을 반환하는 문제를 우회하는 안전한 방식.
      */
-    private suspend fun fetchLivePriceByName(ticker: String, stockName: String): StockItem? =
-        runCatching {
+    private suspend fun fetchLivePriceByName(ticker: String, stockName: String): StockItem? {
+        // 1차: Naver Finance — 당일 현재가
+        val naver = runCatching {
             withContext(Dispatchers.IO) {
-                RetrofitClient.stockApiService.searchByName(
+                val resp  = RetrofitClient.naverStockApiService.getStockBasic(ticker)
+                val price = resp.closePrice?.replace(",", "")?.trim()?.toLongOrNull()
+                val rate  = resp.fluctuationsRatio?.replace(",", "")?.replace("+", "")?.trim()?.toDoubleOrNull()
+                if (price != null && price > 0) {
+                    Log.d("PriceRefresh", "[$ticker/Naver] price=$price rate=$rate")
+                    StockItem(ticker, resp.stockName ?: stockName, price, rate ?: 0.0)
+                } else null
+            }
+        }.onFailure { e ->
+            Log.w("PriceRefresh", "[$ticker] Naver 실패: ${e.message}")
+        }.getOrNull()
+
+        if (naver != null) return naver
+
+        // 2차 폴백: KRX API (전일 종가, 마스터 미로드 환경 대비)
+        return runCatching {
+            withContext(Dispatchers.IO) {
+                val resp  = RetrofitClient.stockApiService.searchByName(
                     serviceKey = KRX_API_KEY,
                     resultType = "json",
                     query      = stockName,
                     numOfRows  = 10
-                ).response?.body?.items
+                )
+                val found = resp.response?.body?.items
                     ?.mapNotNull { it.toStockItem() }
                     ?.find { it.ticker == ticker }
+                if (found != null) Log.d("PriceRefresh", "[$ticker/KRX fallback] price=${found.currentPrice}")
+                found
             }
+        }.onFailure { e ->
+            Log.e("PriceRefresh", "[$ticker] KRX 폴백도 실패: ${e.message}")
         }.getOrNull()
+    }
 
     /** 최근 검색 추가 (외부 UI에서 직접 호출 가능 — 초기 종목 등록 선택 시) */
     fun addRecentSearch(stock: StockItem) {
@@ -1412,16 +1483,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
      * srtnCd 단독 필터는 서버 캐시/동시 처리 문제로 엉뚱한 종목을 반환할 수 있으므로,
      * 이미 동작이 검증된 이름 검색(likeItmsNm) 방식을 사용하고 티커로 재검증한다.
      */
-    fun refreshActiveStockPrices() {
+    fun refreshActiveStockPrices(isManual: Boolean = false) {
         if (_isPriceRefreshing.value) return
         _isPriceRefreshing.value = true
+        if (isManual) _isManualRefreshing.value = true
         viewModelScope.launch {
             try {
-                // Main.immediate는 첫 suspension 전까지 동기 실행되므로,
-                // yield()로 한 번 양보해 Compose가 isPriceRefreshing=true 상태를 렌더할 시간을 확보
                 kotlinx.coroutines.yield()
 
-                // 티커 → 종목명 맵: watchlist·holdings·마스터 순으로 덮어쓰기 (정확도 우선)
                 val tickerNameMap = mutableMapOf<String, String>()
                 _allStocksMasterList.value.forEach { s -> tickerNameMap[s.ticker] = s.name }
                 _watchlist.value.forEach { s -> tickerNameMap[s.ticker] = s.name }
@@ -1429,25 +1498,40 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
                 val holdingTickers = _holdings.value.map { it.stock.ticker }
                 val tickers = (cachedWatchlistTickers + holdingTickers).distinct()
-                if (tickers.isEmpty()) { return@launch }
+                Log.d("PriceRefresh", "갱신 대상 tickers=$tickers")
+                if (tickers.isEmpty()) {
+                    if (isManual) _refreshMessage.tryEmit("새로고침할 종목이 없습니다")
+                    return@launch
+                }
 
-                var anyUpdated = false
+                var updatedCount = 0
                 for (ticker in tickers) {
-                    val name = tickerNameMap[ticker] ?: continue
+                    val name = tickerNameMap[ticker]
+                    if (name == null) {
+                        Log.w("PriceRefresh", "[$ticker] tickerNameMap에 이름 없음 — skip")
+                        continue
+                    }
                     val stock = fetchLivePriceByName(ticker, name)
                     if (stock != null) {
                         dynamicPrices[ticker] = stock
-                        anyUpdated = true
+                        updatedCount++
                     }
-                    delay(150) // API rate-limit 방지용 간격
+                    delay(150)
                 }
-                if (anyUpdated) recomputeAllPriceDependentState()
+                Log.d("PriceRefresh", "완료: $updatedCount/${tickers.size} 종목 업데이트")
+                if (updatedCount > 0) {
+                    recomputeAllPriceDependentState()
+                    if (isManual) _refreshMessage.tryEmit("${updatedCount}개 종목 시세를 업데이트했습니다")
+                } else {
+                    if (isManual) _refreshMessage.tryEmit("시세 조회에 실패했습니다")
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
-                // 가격 업데이트 실패는 silent — 기존 가격 유지
+                if (isManual) _refreshMessage.tryEmit("시세 조회 중 오류가 발생했습니다")
             } finally {
                 _isPriceRefreshing.value = false
+                _isManualRefreshing.value = false
             }
         }
     }
@@ -1475,10 +1559,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         recomputeLeaderboard(uid)
     }
 
-    /** HomeScreen / StockSearchScreen 진입 시 10초 자동 갱신 시작 */
+    /** HomeScreen / StockSearchScreen 진입 시 즉시 1회 갱신 후 10초 자동 반복 */
     fun startPriceAutoRefresh() {
         if (priceRefreshJob?.isActive == true) return
         priceRefreshJob = viewModelScope.launch {
+            refreshActiveStockPrices()          // 진입 즉시 첫 갱신
             while (isActive) {
                 delay(10_000L)
                 refreshActiveStockPrices()
@@ -1490,6 +1575,71 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun stopPriceAutoRefresh() {
         priceRefreshJob?.cancel()
         priceRefreshJob = null
+    }
+
+    // ── 📈 차트 히스토리 조회 (KRX API, 기간 가변) ──────────────────────────────
+
+    fun fetchStockChartHistory(ticker: String, stockName: String, calendarDays: Int = 75) {
+        viewModelScope.launch {
+            _isChartLoading.value = true
+            _stockChartData.value = emptyList()
+            _chartDisplayOffset.value = 0
+            try {
+                val sdf = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.KOREA)
+                val cal = java.util.Calendar.getInstance()
+                val endDate = sdf.format(cal.time)
+
+                // 표시 시작일 (기간 버튼에서 선택한 calendarDays 이전)
+                cal.add(java.util.Calendar.DAY_OF_YEAR, -calendarDays)
+                val displayBeginDate = sdf.format(cal.time)
+
+                // MA20 계산 버퍼: 추가 30 캘린더일(≈20 거래일) 더 앞부터 fetch
+                val MA_BUFFER = 30
+                cal.add(java.util.Calendar.DAY_OF_YEAR, -MA_BUFFER)
+                val fullBeginDate = sdf.format(cal.time)
+
+                val totalDays = calendarDays + MA_BUFFER
+                val numOfRows = (totalDays * 3 / 4).coerceIn(20, 400)
+
+                val resp = withContext(Dispatchers.IO) {
+                    RetrofitClient.stockApiService.fetchStockHistory(
+                        serviceKey = KRX_API_KEY,
+                        resultType = "json",
+                        stockName  = stockName,
+                        beginDate  = fullBeginDate,
+                        endDate    = endDate,
+                        numOfRows  = numOfRows
+                    )
+                }
+                val parsed = (resp.response?.body?.items ?: emptyList())
+                    .filter { it.srtnCd?.trim() == ticker }
+                    .mapNotNull { item ->
+                        val date  = item.basDt?.trim()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                        val close = item.clpr?.replace(",", "")?.trim()?.toFloatOrNull()
+                            ?.takeIf { it > 0f } ?: return@mapNotNull null
+                        val vol   = item.trqu?.replace(",", "")?.trim()?.toLongOrNull() ?: 0L
+                        ChartPoint(date, close, vol)
+                    }
+                    .sortedBy { it.date }
+
+                // 표시 시작 인덱스: displayBeginDate 이상인 첫 포인트
+                // MA20을 첫 화면 포인트부터 그리려면 인덱스가 최소 19 이상이어야 함
+                val rawOffset = parsed.indexOfFirst { it.date >= displayBeginDate }
+                    .let { if (it < 0) 0 else it }
+                val displayOffset = rawOffset.coerceAtLeast(19)
+                    .coerceAtMost((parsed.size - 2).coerceAtLeast(0))
+
+                Log.d("ChartFetch", "[$ticker] KRX ${parsed.size}개 포인트, displayOffset=$displayOffset (buffer=${displayOffset - rawOffset}+${MA_BUFFER}일)")
+                _chartDisplayOffset.value = displayOffset
+                _stockChartData.value = parsed
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e("ChartFetch", "[$ticker] 실패: ${e.javaClass.simpleName} — ${e.message}")
+            } finally {
+                _isChartLoading.value = false
+            }
+        }
     }
 
     private fun StockItemResponse.toStockItem(): StockItem? {
@@ -1722,6 +1872,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         _memberHoldings.value   = emptyMap()
         _portfolioTargetUid.value = ""
         _livePrices.value       = emptyMap()
+        _stockChartData.value   = emptyList()
         // _allStocksMasterList, _recentSearches 는 로그아웃 후에도 유지 (재로그인 시 즉시 사용)
     }
 

@@ -1,7 +1,16 @@
 package io.github.juns_git.android.familystockgate.data.remote
 
 import retrofit2.http.GET
+import retrofit2.http.Path
 import retrofit2.http.Query
+
+// Naver Finance 모바일 API — 당일 현재가 조회
+interface NaverStockApiService {
+    @GET("api/stock/{code}/basic")
+    suspend fun getStockBasic(
+        @Path("code") code: String
+    ): NaverStockBasicResponse
+}
 
 interface StockApiService {
 
@@ -28,6 +37,17 @@ interface StockApiService {
         @Query(value = "serviceKey", encoded = true) serviceKey: String,
         @Query("resultType") resultType: String,
         @Query("srtnCd") ticker: String,
+        @Query("numOfRows") numOfRows: Int
+    ): StockPriceApiResponse
+
+    // 단일 종목 날짜 범위 조회 — 30일 차트 히스토리용
+    @GET("1160100/service/GetStockSecuritiesInfoService/getStockPriceInfo")
+    suspend fun fetchStockHistory(
+        @Query(value = "serviceKey", encoded = true) serviceKey: String,
+        @Query("resultType") resultType: String,
+        @Query("itmsNm") stockName: String,
+        @Query("beginBasDt") beginDate: String,
+        @Query("endBasDt") endDate: String,
         @Query("numOfRows") numOfRows: Int
     ): StockPriceApiResponse
 }

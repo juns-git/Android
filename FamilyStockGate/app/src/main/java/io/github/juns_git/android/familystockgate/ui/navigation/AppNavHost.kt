@@ -16,6 +16,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -127,6 +128,7 @@ fun AppNavHost(appViewModel: AppViewModel, familyViewModel: FamilyStockViewModel
     val visibleNavItems = bottomNavItems
 
     Scaffold(
+        containerColor = Color.Transparent,
         bottomBar = {
             if (isLoggedIn && currentRoute in screensWithBottomNav) {
                 NavigationBar {
@@ -166,18 +168,16 @@ fun AppNavHost(appViewModel: AppViewModel, familyViewModel: FamilyStockViewModel
             composable(Screen.ProfileSetup.route) {
                 ProfileSetupScreen(
                     viewModel = familyViewModel,
-                    innerPadding = innerPadding
+                    innerPadding = innerPadding,
+                    onSignOut = { familyViewModel.signOut() }
                 )
             }
             composable(Screen.PendingConnection.route) {
                 PendingConnectionScreen(
                     viewModel = appViewModel,
                     innerPadding = innerPadding,
-                    onApproved = {
-                        // [DEBUG] authState를 LoggedIn으로 바꾸면 LaunchedEffect(authState)가
-                        // 자동으로 Home 으로 이동 + isLoggedIn=true 가 되어 하단 바도 표시됨
-                        familyViewModel.debugForceApprove()
-                    }
+                    onApproved = { familyViewModel.debugForceApprove() },
+                    onSignOut = { familyViewModel.signOut() }
                 )
             }
             composable(Screen.Home.route) {

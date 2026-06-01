@@ -77,16 +77,13 @@ fun StockSearchScreen(
             .padding(innerPadding)
             .padding(horizontal = 16.dp)
     ) {
-        Spacer(Modifier.height(12.dp))
-
-        Text("[검색] 종목 검색 → 관심 등록", style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.height(4.dp))
         Text(
-            text = "관심 종목으로 등록한 뒤, 홈 화면에서 클릭하면 거래할 수 있습니다.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            text = "종목 검색",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(vertical = 12.dp)
         )
-        Spacer(Modifier.height(12.dp))
+
 
         // ── 검색 입력창 ──────────────────────────────────────
         OutlinedTextField(

@@ -1,7 +1,10 @@
 ﻿package io.github.juns_git.android.familystockgate.ui.screens
 
 import android.content.Intent
+import android.provider.Settings
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -46,22 +50,30 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.core.app.NotificationManagerCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import io.github.juns_git.android.familystockgate.ui.theme.AppTheme
 import io.github.juns_git.android.familystockgate.data.model.HoldingItem
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -78,6 +90,7 @@ import io.github.juns_git.android.familystockgate.utils.FirebaseCustomConfig
 @Composable
 fun SettingsScreen(appViewModel: AppViewModel, familyViewModel: FamilyStockViewModel, innerPadding: PaddingValues) {
     val role               by appViewModel.debugRole.collectAsState()
+    val appTheme           by appViewModel.appTheme.collectAsState()
     val commissionRate     by appViewModel.commissionRate.collectAsState()
     val taxRate            by appViewModel.taxRate.collectAsState()
     val fcmEnabled         by appViewModel.fcmEnabled.collectAsState()
@@ -94,6 +107,23 @@ fun SettingsScreen(appViewModel: AppViewModel, familyViewModel: FamilyStockViewM
     var showResetDialog by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    // 시스템 알림 설정에서 돌아올 때 앱 내 ON/OFF 상태를 자동 동기화
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                val sysEnabled = NotificationManagerCompat.from(context).areNotificationsEnabled()
+                if (appViewModel.fcmEnabled.value != sysEnabled) {
+                    appViewModel.updateFcmEnabled(sysEnabled)
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -106,6 +136,16 @@ fun SettingsScreen(appViewModel: AppViewModel, familyViewModel: FamilyStockViewM
             fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
         )
+
+        // ── 🎨 테마 설정 (공통) ───────────────────────────────────────────────
+        ThemePickerSection(
+            current  = appTheme,
+            onSelect = { appViewModel.updateAppTheme(it) }
+        )
+
+        Spacer(Modifier.height(24.dp))
+        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+        Spacer(Modifier.height(24.dp))
 
         if (role == UserRole.PARENT) {
 
@@ -261,7 +301,18 @@ fun SettingsScreen(appViewModel: AppViewModel, familyViewModel: FamilyStockViewM
                     }
                     Switch(
                         checked = fcmEnabled,
-                        onCheckedChange = { appViewModel.updateFcmEnabled(it) }
+                        onCheckedChange = { enabled ->
+                            if (enabled && !NotificationManagerCompat.from(context).areNotificationsEnabled()) {
+                                // 시스템 알림이 꺼져 있으면 시스템 설정으로 이동
+                                context.startActivity(
+                                    Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                                        putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                                    }
+                                )
+                            } else {
+                                appViewModel.updateFcmEnabled(enabled)
+                            }
+                        }
                     )
                 }
             }
@@ -897,6 +948,96 @@ private fun AdminRecentChip(
                     modifier = Modifier.size(11.dp),
                     tint = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.6f)
                 )
+            }
+        }
+    }
+}
+
+// ── 🎨 테마 피커 섹션 ─────────────────────────────────────────────────────────
+
+private data class ThemePreset(
+    val theme: AppTheme,
+    val emoji: String,
+    val label: String,
+    val swatch: List<Color>
+)
+
+private val themePresets = listOf(
+    ThemePreset(AppTheme.MODERN,     "☀️", "라이트 모드",
+        listOf(Color(0xFF1E293B), Color(0xFFF1F5F9), Color(0xFF0F766E))),
+    ThemePreset(AppTheme.DARK,       "🌙", "다크 모드",
+        listOf(Color(0xFF0F172A), Color(0xFF1E293B), Color(0xFF60A5FA))),
+    ThemePreset(AppTheme.BEAR_BLUE,  "🐻", "곰돌이 블루",
+        listOf(Color(0xFF60A5FA), Color(0xFFF0F9FF), Color(0xFFFBBF24))),
+    ThemePreset(AppTheme.BUNNY_PINK, "🐰", "토끼 핑크",
+        listOf(Color(0xFFF472B6), Color(0xFFFFF0F7), Color(0xFFC084FC)))
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ThemePickerSection(current: AppTheme, onSelect: (AppTheme) -> Unit) {
+    Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+        Text(
+            "🎨 내 앱 테마 설정",
+            style      = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            modifier   = Modifier.padding(bottom = 12.dp)
+        )
+        Row(
+            modifier              = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            themePresets.forEach { preset ->
+                val selected = current == preset.theme
+                Card(
+                    onClick  = { onSelect(preset.theme) },
+                    modifier = Modifier.weight(1f),
+                    colors   = CardDefaults.cardColors(
+                        containerColor = if (selected)
+                            MaterialTheme.colorScheme.primaryContainer
+                        else
+                            MaterialTheme.colorScheme.surfaceVariant
+                    ),
+                    border = if (selected)
+                        BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+                    else
+                        BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                ) {
+                    Column(
+                        modifier            = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp, vertical = 10.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text  = preset.emoji,
+                            style = MaterialTheme.typography.titleLarge
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            preset.swatch.forEach { c ->
+                                Box(Modifier.size(11.dp).background(c, CircleShape))
+                            }
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text       = preset.label,
+                            style      = MaterialTheme.typography.labelSmall,
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                            textAlign  = TextAlign.Center,
+                            maxLines   = 2
+                        )
+                        if (selected) {
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text       = "✓",
+                                style      = MaterialTheme.typography.labelSmall,
+                                color      = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
             }
         }
     }

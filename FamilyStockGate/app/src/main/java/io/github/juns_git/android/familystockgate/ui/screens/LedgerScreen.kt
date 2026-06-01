@@ -77,8 +77,9 @@ fun LedgerScreen(viewModel: AppViewModel, innerPadding: PaddingValues) {
 
     Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
         Text(
-            text = "[Frame 7] ${if (role == UserRole.PARENT) "부모" else "자녀"} 모드 · 장부 & 승인 센터",
-            style = MaterialTheme.typography.titleMedium,
+            text = "장부 & 승인 센터",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
         )
 

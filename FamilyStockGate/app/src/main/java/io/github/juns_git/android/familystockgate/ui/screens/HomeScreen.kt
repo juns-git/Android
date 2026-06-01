@@ -1,6 +1,9 @@
 ﻿package io.github.juns_git.android.familystockgate.ui.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,12 +24,13 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.Button
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -41,23 +45,29 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.github.juns_git.android.familystockgate.data.model.HoldingItem
 import io.github.juns_git.android.familystockgate.data.model.StockItem
 import io.github.juns_git.android.familystockgate.data.model.UserRole
+import io.github.juns_git.android.familystockgate.ui.theme.AppTheme
+import io.github.juns_git.android.familystockgate.ui.theme.LocalAppTheme
+import io.github.juns_git.android.familystockgate.ui.theme.StockDown
+import io.github.juns_git.android.familystockgate.ui.theme.StockUp
 import io.github.juns_git.android.familystockgate.ui.viewmodel.AppViewModel
 
 // [Frame 2] Home Dashboard — 보유 종목 / 관심 종목 탭 분기
@@ -74,82 +84,126 @@ fun HomeScreen(
     val availableCash by viewModel.availableCash.collectAsState()
     val leaderboard by viewModel.leaderboard.collectAsState()
     val isPriceRefreshing by viewModel.isPriceRefreshing.collectAsState()
+    val isManualRefreshing by viewModel.isManualRefreshing.collectAsState()
 
     val myEntry = leaderboard.find { it.isCurrentUser }
 
-    var selectedTab by remember { mutableIntStateOf(0) }
+    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var showWithdrawalDialog by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
 
     DisposableEffect(Unit) {
         viewModel.startPriceAutoRefresh()
         onDispose { viewModel.stopPriceAutoRefresh() }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(innerPadding)
-    ) {
-        // ── 자산 요약 카드 ────────────────────────────────────
-        CashSection(
-            role = role,
-            availableCash = availableCash,
-            initialBudget = myEntry?.initialBudget ?: 0L,
-            totalAsset    = myEntry?.totalAsset    ?: availableCash,
-            profitRate    = myEntry?.profitRate    ?: 0.0,
-            isPriceRefreshing = isPriceRefreshing,
-            onRefresh     = { viewModel.refreshActiveStockPrices() },
-            onWithdrawalClick = { showWithdrawalDialog = true }
-        )
-
-        // ── 보유 / 관심 탭 ────────────────────────────────────
-        TabRow(selectedTabIndex = selectedTab) {
-            Tab(
-                selected = selectedTab == 0,
-                onClick = { selectedTab = 0 },
-                text = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("보유 종목")
-                        if (holdings.isNotEmpty()) {
-                            Spacer(Modifier.width(4.dp))
-                            Badge { Text("${holdings.size}") }
-                        }
-                    }
-                }
-            )
-            Tab(
-                selected = selectedTab == 1,
-                onClick = { selectedTab = 1 },
-                text = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("관심 종목")
-                        if (watchlist.isNotEmpty()) {
-                            Spacer(Modifier.width(4.dp))
-                            Badge { Text("${watchlist.size}") }
-                        }
-                    }
-                }
-            )
+    LaunchedEffect(Unit) {
+        viewModel.refreshMessage.collect { message ->
+            snackbarHostState.showSnackbar(message, duration = SnackbarDuration.Short)
         }
+    }
 
-        when (selectedTab) {
-            0 -> HoldingsTab(
-                holdings = holdings,
+    // 탭 전환 시 해당 탭 종목 가격 즉시 갱신
+    LaunchedEffect(selectedTab) {
+        viewModel.refreshActiveStockPrices()
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+        ) {
+            // ── 자산 요약 카드 ────────────────────────────────────
+            CashSection(
                 role = role,
-                onItemClick = { holding ->
-                    onNavigateToTrade(holding.stock.ticker, holding.stock.name, "holdings")
-                }
+                availableCash = availableCash,
+                initialBudget = myEntry?.initialBudget ?: 0L,
+                totalAsset    = myEntry?.totalAsset    ?: availableCash,
+                profitRate    = myEntry?.profitRate    ?: 0.0,
+                isPriceRefreshing = isPriceRefreshing,
+                onRefresh     = { viewModel.refreshActiveStockPrices(isManual = true) },
+                onWithdrawalClick = { showWithdrawalDialog = true }
             )
-            1 -> WatchlistTab(
-                watchlist = watchlist,
-                onItemClick = { stock ->
-                    onNavigateToTrade(stock.ticker, stock.name, "watchlist")
-                },
-                onRemove = { stock ->
-                    viewModel.removeFromWatchlist(stock.ticker)
-                }
-            )
+
+            // ── 보유 / 관심 탭 ────────────────────────────────────
+            TabRow(selectedTabIndex = selectedTab) {
+                Tab(
+                    selected = selectedTab == 0,
+                    onClick = { selectedTab = 0 },
+                    text = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("보유 종목")
+                            if (holdings.isNotEmpty()) {
+                                Spacer(Modifier.width(4.dp))
+                                Badge { Text("${holdings.size}") }
+                            }
+                        }
+                    }
+                )
+                Tab(
+                    selected = selectedTab == 1,
+                    onClick = { selectedTab = 1 },
+                    text = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("관심 종목")
+                            if (watchlist.isNotEmpty()) {
+                                Spacer(Modifier.width(4.dp))
+                                Badge { Text("${watchlist.size}") }
+                            }
+                        }
+                    }
+                )
+            }
+
+            when (selectedTab) {
+                0 -> HoldingsTab(
+                    holdings = holdings,
+                    role = role,
+                    onItemClick = { holding ->
+                        onNavigateToTrade(holding.stock.ticker, holding.stock.name, "holdings")
+                    }
+                )
+                1 -> WatchlistTab(
+                    watchlist = watchlist,
+                    onItemClick = { stock ->
+                        onNavigateToTrade(stock.ticker, stock.name, "watchlist")
+                    },
+                    onRemove = { stock ->
+                        viewModel.removeFromWatchlist(stock.ticker)
+                    }
+                )
+            }
         }
+
+        if (isManualRefreshing) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.25f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Card(
+                    shape = MaterialTheme.shapes.large
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 32.dp, vertical = 24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        CircularProgressIndicator()
+                        Text("업데이트 중", style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            }
+        }
+
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = innerPadding.calculateBottomPadding())
+        )
     }
 
     if (showWithdrawalDialog) {
@@ -176,30 +230,34 @@ private fun CashSection(
     onRefresh: () -> Unit,
     onWithdrawalClick: () -> Unit
 ) {
+    val theme     = LocalAppTheme.current
     val roleLabel = if (role == UserRole.PARENT) "부모" else "자녀"
     val hasBase   = initialBudget > 0
     val isProfit  = profitRate >= 0
-    val rateColor = if (isProfit) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.error
-    val onCard    = MaterialTheme.colorScheme.onPrimaryContainer
+    val rateColor = if (isProfit) StockUp else StockDown
+    val cardColor = when (theme) {
+        AppTheme.BEAR_BLUE, AppTheme.BUNNY_PINK -> MaterialTheme.colorScheme.primaryContainer
+        else                                     -> MaterialTheme.colorScheme.surface
+    }
+    val onCard = when (theme) {
+        AppTheme.BEAR_BLUE, AppTheme.BUNNY_PINK -> MaterialTheme.colorScheme.onPrimaryContainer
+        else                                     -> MaterialTheme.colorScheme.onSurface
+    }
     val subColor  = onCard.copy(alpha = 0.55f)
 
-    val infiniteTransition = rememberInfiniteTransition(label = "refresh-spin")
-    val spinDegrees by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue  = 360f,
-        animationSpec = infiniteRepeatable(
-            animation  = tween(durationMillis = 800, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "spin"
+    val refreshInteractionSource = remember { MutableInteractionSource() }
+    val isRefreshPressed by refreshInteractionSource.collectIsPressedAsState()
+    val refreshIconScale by animateFloatAsState(
+        targetValue = if (isRefreshPressed) 0.65f else 1f,
+        animationSpec = spring(stiffness = Spring.StiffnessHigh),
+        label = "refresh-press-scale"
     )
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 8.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+        colors = CardDefaults.cardColors(containerColor = cardColor)
     ) {
         Column(Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
 
@@ -216,15 +274,16 @@ private fun CashSection(
                 )
                 IconButton(
                     onClick  = onRefresh,
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier.size(36.dp),
+                    interactionSource = refreshInteractionSource
                 ) {
                     Icon(
                         Icons.Default.Refresh,
-                        contentDescription = if (isPriceRefreshing) "새로고침 중" else "가격 새로고침",
-                        tint     = subColor,
+                        contentDescription = "가격 새로고침",
+                        tint = subColor,
                         modifier = Modifier
-                            .size(18.dp)
-                            .rotate(if (isPriceRefreshing) spinDegrees else 0f)
+                            .size(20.dp)
+                            .scale(refreshIconScale)
                     )
                 }
             }
@@ -375,8 +434,7 @@ private fun HoldingCard(holding: HoldingItem, onClick: () -> Unit) {
                     fontWeight = FontWeight.Medium
                 )
                 val rateText = "%.2f%%".format(holding.profitRate)
-                val rateColor = if (holding.profitRate >= 0) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.error
+                val rateColor = if (holding.profitRate >= 0) StockUp else StockDown
                 Text(
                     text = if (holding.profitRate >= 0) "+${rateText}" else rateText,
                     style = MaterialTheme.typography.bodySmall,
@@ -450,8 +508,7 @@ private fun WatchlistCard(stock: StockItem, onClick: () -> Unit, onRemove: () ->
                 Text(
                     text = if (stock.changeRate >= 0) "+${rateText}" else rateText,
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (stock.changeRate >= 0) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.error
+                    color = if (stock.changeRate >= 0) StockUp else StockDown
                 )
             }
             IconButton(onClick = onRemove) {

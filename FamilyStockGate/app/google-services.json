@@ -14,6 +14,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "578751242407-14cfr4tmds7hdrj5hc8eja0pbhdj1s1k.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "io.github.juns_git.android.familystockgate",
+            "certificate_hash": "779d2c4a4da46ae3d5f07513d63984c12985349e"
+          }
+        },
+        {
           "client_id": "578751242407-ln0abrg4g9rvdskm0p7grb6u97k329gc.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {

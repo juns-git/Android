@@ -31,6 +31,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationManagerCompat
 import io.github.juns_git.android.familystockgate.data.model.LeaderboardEntry
+import io.github.juns_git.android.familystockgate.ui.theme.AppTheme
+import io.github.juns_git.android.familystockgate.ui.theme.CharacterBadge
+import io.github.juns_git.android.familystockgate.ui.theme.LocalAppTheme
+import io.github.juns_git.android.familystockgate.ui.theme.StockDown
+import io.github.juns_git.android.familystockgate.ui.theme.StockUp
 import io.github.juns_git.android.familystockgate.ui.viewmodel.AppViewModel
 
 // [Frame 8] Leaderboard — 가족 실시간 수익률 랭킹 + FCM 알림 설정
@@ -40,9 +45,10 @@ fun LeaderboardScreen(
     innerPadding: PaddingValues,
     onUserClick: (uid: String, nickname: String) -> Unit = { _, _ -> }
 ) {
-    val context     = LocalContext.current
-    val leaderboard by viewModel.leaderboard.collectAsState()
-    val fcmEnabled  by viewModel.fcmEnabled.collectAsState()
+    val context      = LocalContext.current
+    val currentTheme = LocalAppTheme.current
+    val leaderboard  by viewModel.leaderboard.collectAsState()
+    val fcmEnabled   by viewModel.fcmEnabled.collectAsState()
 
     // 시스템 레벨 알림 권한 상태 (화면 진입 시 1회 스냅샷)
     val notificationGranted = remember {
@@ -67,9 +73,14 @@ fun LeaderboardScreen(
         Spacer(Modifier.height(16.dp))
 
         // ── 🏆 가족 수익률 랭킹 보드 ──────────────────────────────────────────
+        val rankingTitle = when (currentTheme) {
+            AppTheme.BEAR_BLUE  -> "🐻 가족 수익률 랭킹"
+            AppTheme.BUNNY_PINK -> "🐰 가족 수익률 랭킹"
+            else                -> "🏆 가족 수익률 랭킹"
+        }
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp)) {
-                Text("🏆 가족 수익률 랭킹", style = MaterialTheme.typography.titleMedium)
+                Text(rankingTitle, style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(12.dp))
 
                 if (leaderboard.isEmpty()) {
@@ -81,8 +92,9 @@ fun LeaderboardScreen(
                 } else {
                     leaderboard.forEachIndexed { index, entry ->
                         RankRow(
-                            rank = index + 1,
-                            entry = entry,
+                            rank     = index + 1,
+                            entry    = entry,
+                            theme    = currentTheme,
                             onUserClick = { onUserClick(entry.childUid, entry.nickname) }
                         )
                         if (index < leaderboard.lastIndex) {
@@ -155,12 +167,25 @@ fun LeaderboardScreen(
 // ── 랭킹 행 ──────────────────────────────────────────────────────────────────
 
 @Composable
-private fun RankRow(rank: Int, entry: LeaderboardEntry, onUserClick: () -> Unit = {}) {
-    val medal = when (rank) {
-        1    -> "🥇"
-        2    -> "🥈"
-        3    -> "🥉"
-        else -> "${rank}위"
+private fun RankRow(
+    rank: Int,
+    entry: LeaderboardEntry,
+    theme: AppTheme = AppTheme.MODERN,
+    onUserClick: () -> Unit = {}
+) {
+    val medal = when (theme) {
+        AppTheme.BEAR_BLUE -> when (rank) {
+            1 -> "🐻🥇"; 2 -> "🐻🥈"; 3 -> "🐻🥉"
+            else -> "🐻${rank}"
+        }
+        AppTheme.BUNNY_PINK -> when (rank) {
+            1 -> "🐰🥇"; 2 -> "🐰🥈"; 3 -> "🐰🥉"
+            else -> "🐰${rank}"
+        }
+        else -> when (rank) {
+            1 -> "🥇"; 2 -> "🥈"; 3 -> "🥉"
+            else -> "${rank}위"
+        }
     }
 
     // 수익률 표시 문자열: 소수점 둘째자리, 부호 명시
@@ -179,6 +204,7 @@ private fun RankRow(rank: Int, entry: LeaderboardEntry, onUserClick: () -> Unit 
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text(medal, style = MaterialTheme.typography.titleLarge)
+        CharacterBadge(size = 32.dp)
 
         Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -213,8 +239,7 @@ private fun RankRow(rank: Int, entry: LeaderboardEntry, onUserClick: () -> Unit 
             text = rateDisplay,
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.SemiBold,
-            color = if (isPositive) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.error
+            color = if (isPositive) StockUp else StockDown
         )
     }
 }

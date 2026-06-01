@@ -4,6 +4,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.juns_git.android.familystockgate.ui.navigation.AppNavHost
 import io.github.juns_git.android.familystockgate.ui.theme.FamilyStockGateTheme
@@ -21,9 +23,10 @@ class MainActivity : ComponentActivity() {
 
         enableEdgeToEdge()
         setContent {
-            FamilyStockGateTheme {
-                val appViewModel: AppViewModel = viewModel()
-                val familyViewModel: FamilyStockViewModel = viewModel()
+            val appViewModel: AppViewModel = viewModel()
+            val familyViewModel: FamilyStockViewModel = viewModel()
+            val appTheme by appViewModel.appTheme.collectAsState()
+            FamilyStockGateTheme(appTheme = appTheme) {
                 AppNavHost(appViewModel = appViewModel, familyViewModel = familyViewModel)
             }
         }

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -25,7 +26,8 @@ import io.github.juns_git.android.familystockgate.ui.viewmodel.AppViewModel
 fun PendingConnectionScreen(
     viewModel: AppViewModel,
     innerPadding: PaddingValues,
-    onApproved: () -> Unit
+    onApproved: () -> Unit,
+    onSignOut: () -> Unit
 ) {
     // TODO: Firebase Firestore 실시간 리스너로 users/{uid}.familyId 변화를 감지하여
     //       null → 값 으로 바뀌면 자동으로 onApproved() 호출
@@ -61,12 +63,17 @@ fun PendingConnectionScreen(
 
         Spacer(Modifier.height(64.dp))
 
-        // [DEBUG] 테스트용 우회 버튼
         OutlinedButton(
-            onClick = onApproved,
-            modifier = Modifier.fillMaxWidth()
+            onClick = onSignOut,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.outlinedButtonColors(
+                contentColor = MaterialTheme.colorScheme.error
+            ),
+            border = androidx.compose.foundation.BorderStroke(
+                1.dp, MaterialTheme.colorScheme.error
+            )
         ) {
-            Text("[DEBUG] 승인된 것으로 간주하고 홈으로 이동")
+            Text("로그아웃")
         }
     }
 }
